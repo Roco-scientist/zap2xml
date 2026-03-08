@@ -1,25 +1,18 @@
 import { UserAgent } from "./useragents.js";
 
 export function processLineupId(): string {
-  const lineupId =
+  return (
     process.env["LINEUP_ID"] ||
     process.argv.find((arg) => arg.startsWith("--lineupId="))?.split("=")[1] ||
-    "USA-lineupId-DEFAULT";
-
-  if (lineupId.includes("OTA")) {
-    return "USA-lineupId-DEFAULT";
-  }
-
-  return lineupId;
+    "USA-lineupId-DEFAULT"
+  );
 }
 
 export function getHeadendId(lineupId: string): string {
   if (lineupId.includes("OTA")) {
-    return "lineupId";
+    return "";
   }
-
   const match = lineupId.match(/^(USA|CAN)-(.*?)(?:-[A-Z]+)?$/);
-
   return match?.[2] || "lineup";
 }
 
