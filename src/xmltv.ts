@@ -10,8 +10,6 @@ export function escapeXml(unsafe: string): string {
 }
 
 export function formatDate(dateStr: string): string {
-  // Input: "2025-07-18T19:00:00Z"
-  // Output: "20250718190000 +0000"
   const d = new Date(dateStr);
   const pad = (n: number) => n.toString().padStart(2, "0");
   const YYYY = d.getUTCFullYear();
@@ -25,21 +23,16 @@ export function formatDate(dateStr: string): string {
 
 export function buildChannelsXml(data: GridApiResponse): string {
   let xml = "";
-
   for (const channel of data.channels) {
     xml += `  <channel id="${escapeXml(channel.channelId)}">\n`;
     xml += `    <display-name>${escapeXml(channel.callSign)}</display-name>\n`;
 
     if (channel.affiliateName) {
-      xml += `    <display-name>${escapeXml(
-        channel.affiliateName,
-      )}</display-name>\n`;
+      xml += `    <display-name>${escapeXml(channel.affiliateName)}</display-name>\n`;
     }
 
     if (channel.channelNo) {
-      xml += `    <display-name>${escapeXml(
-        channel.channelNo,
-      )}</display-name>\n`;
+      xml += `    <display-name>${escapeXml(channel.channelNo)}</display-name>\n`;
     }
 
     if (channel.thumbnail) {
@@ -49,7 +42,6 @@ export function buildChannelsXml(data: GridApiResponse): string {
           : "https:" + channel.thumbnail,
       )}" />\n`;
     }
-
     xml += "  </channel>\n";
   }
   return xml;
@@ -60,85 +52,86 @@ export function buildProgramsXml(data: GridApiResponse): string {
 
   for (const channel of data.channels) {
     for (const event of channel.events) {
-      xml += `  <programme start="${formatDate(
-        event.startTime,
-      )}" stop="${formatDate(event.endTime)}" channel="${escapeXml(
-        channel.channelId,
-      )}">\n`;
-
+      xml += `  <programme start="${formatDate(event.startTime)}" stop="${formatDate(event.endTime)}" channel="${escapeXml(channel.channelId)}">\n`;
       xml += `    <title>${escapeXml(event.program.title)}</title>\n`;
 
       if (event.program.episodeTitle) {
-        xml += `    <sub-title>${escapeXml(
-          event.program.episodeTitle,
-        )}</sub-title>\n`;
+        xml += `    <sub-title>${escapeXml(event.program.episodeTitle)}</sub-title>\n`;
       }
 
       if (event.program.shortDesc) {
         xml += `    <desc>${escapeXml(event.program.shortDesc)}</desc>\n`;
       }
 
-      if (event.rating) {
-        xml += `    <rating system="MPAA"><value>${escapeXml(
-          event.rating,
-        )}</value></rating>\n`;
+      // 1. DATE/YEAR: Crucial for NextPVR movie identification and UI
+      if (event.program.releaseYear) {
+        xml += `    <date>${escapeXml(event.program.releaseYear)}</date>\n`;
       }
 
-      if (event.flag && event.flag.length > 0) {
-        if (event.flag.includes("New")) {
-          xml += `    <new />\n`;
-        }
-
-        if (event.flag.includes("Live")) {
-          xml += `    <live />\n`;
-        }
-
-        if (event.flag.includes("Premiere")) {
-          xml += `    <premiere />\n`;
-        }
-
-        if (event.flag.includes("Finale")) {
-          xml += `    <last-chance />\n`;
+      // 2. CATEGORIES: For grid color-coding (Sports=Green, Movies=Purple, etc.)
+      if (event.filter && event.filter.length > 0) {
+        for (const f of event.filter) {
+          const catName = f.replace("filter-", "");
+          const capitalized =
+            catName.charAt(0).toUpperCase() + catName.slice(1);
+          xml += `    <category lang="en">${escapeXml(capitalized)}</category>\n`;
         }
       }
-
-      if (
-        !event.flag ||
-        (event.flag &&
-          event.flag.length > 0 &&
-          !event.flag.includes("New") &&
-          !event.flag.includes("Live"))
-      ) {
-        xml += `    <previously-shown />\n`;
+      if (event.flag && event.flag.includes("Live")) {
+        xml += `    <category lang="en">Live</category>\n`;
       }
 
+      // 3. EPISODE NUMBERS: NextPVR relies on these for duplicate detection
+      // TMS ID is the most reliable way to avoid recording the same episode twice
+      if (event.program.id) {
+        xml += `    <episode-num system="dd_progid">${escapeXml(event.program.id)}</episode-num>\n`;
+        xml += `    <episode-num system="tms">${escapeXml(event.program.id)}</episode-num>\n`;
+      }
+
+      // Season/Episode formatting
+      if (event.program.season && event.program.episode) {
+        // onscreen is for the user interface
+        xml += `    <episode-num system="onscreen">${escapeXml(
+          `S${event.program.season.padStart(2, "0")}E${event.program.episode.padStart(2, "0")}`,
+        )}</episode-num>\n`;
+
+        // xmltv_ns is zero-indexed per the DTD standard (Season 1 = 0)
+        const s = parseInt(event.program.season, 10) - 1;
+        const e = parseInt(event.program.episode, 10) - 1;
+        xml += `    <episode-num system="xmltv_ns">${s} . ${e} .</episode-num>\n`;
+      }
+
+      // 4. AUDIO/SUBTITLES: For UI badges (Stereo, CC, DVS)
       if (event.tags && event.tags.length > 0) {
+        xml += `    <audio>\n`;
         if (event.tags.includes("Stereo")) {
-          xml += `    <audio type="stereo" />\n`;
+          xml += `      <stereo>stereo</stereo>\n`;
         }
+        xml += `      <present>yes</present>\n`;
+        xml += `    </audio>\n`;
+
         if (event.tags.includes("CC")) {
           xml += `    <subtitles type="teletext" />\n`;
         }
       }
 
-      if (event.program.season && event.program.episode) {
-        xml += `    <episode-num system="onscreen">${escapeXml(
-          `S${event.program.season.padStart(2, "0")}E${event.program.episode.padStart(2, "0")}`,
-        )}</episode-num>\n`;
-
-        xml += `    <episode-num system="common">${escapeXml(
-          `S${event.program.season.padStart(2, "0")}E${event.program.episode.padStart(2, "0")}`,
-        )}</episode-num>\n`;
-
-        if (/..\d{8}\d{4}/.test(event.program.id)) {
-          xml += `    <episode-num system="dd_progid">${escapeXml(event.program.id)}</episode-num>\n`;
-        }
-
-        xml += `    <episode-num system="xmltv_ns">${escapeXml(
-          `${event.program.season} . ${event.program.episode}`,
-        )}.</episode-num>\n`;
+      if (event.rating) {
+        xml += `    <rating system="MPAA"><value>${escapeXml(event.rating)}</value></rating>\n`;
       }
 
+      // 5. NEW vs PREVIOUSLY SHOWN: Correct logic for NextPVR's "New Only" recordings
+      if (event.flag && event.flag.includes("New")) {
+        xml += `    <new />\n`;
+      } else if (event.flag && !event.flag.includes("Live")) {
+        // If it's not new and not live, it's a rerun
+        xml += `    <previously-shown />\n`;
+      }
+
+      if (event.flag && event.flag.includes("Premiere")) {
+        xml += `    <premiere />\n`;
+      }
+
+      // 6. THUMBNAILS
       if (event.thumbnail) {
         const src = event.thumbnail.startsWith("http")
           ? event.thumbnail
